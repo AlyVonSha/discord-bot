@@ -14,7 +14,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 RSS_URL = "https://nitter.net/uma_musu/rss"
 
 # ======================
-# DUMMY WEB SERVER (FIX RENDER)
+# FLASK (Render FIX)
 # ======================
 app = Flask(__name__)
 
@@ -40,6 +40,7 @@ client = discord.Client(intents=intents)
 # ======================
 def send_webhook_embed(title, description, url=None):
     if not WEBHOOK_URL:
+        print("WEBHOOK_URL ontbreekt!")
         return
 
     data = {
@@ -49,7 +50,9 @@ def send_webhook_embed(title, description, url=None):
                 "description": description,
                 "url": url,
                 "color": 0xFF66AA,
-                "footer": {"text": "🐴 Umamusume JP Bot"}
+                "footer": {
+                    "text": "🐴 Umamusume JP Bot"
+                }
             }
         ]
     }
@@ -60,9 +63,13 @@ def send_webhook_embed(title, description, url=None):
         print("Webhook error:", e)
 
 # ======================
-# RSS LOOP
+# RSS MEMORY FIX (NO DUPLICATES)
 # ======================
-last_entry = None
+if os.path.exists("last_entry.txt"):
+    with open("last_entry.txt", "r") as f:
+        last_entry = f.read().strip()
+else:
+    last_entry = None
 
 async def check_rss():
     global last_entry
@@ -85,6 +92,10 @@ async def check_rss():
                         latest.link
                     )
 
+                    # SAVE LAST ENTRY (IMPORTANT FIX)
+                    with open("last_entry.txt", "w") as f:
+                        f.write(last_entry)
+
                     print("Nieuwe update gestuurd!")
 
         except Exception as e:
@@ -106,13 +117,16 @@ async def on_message(message):
         return
 
     if message.content == "!test":
-        send_webhook_embed("Bot Test", "👋 Bot werkt!")
+        send_webhook_embed("Bot Test", "👋 Bot werkt via embed!")
         await message.channel.send("OK webhook gestuurd!")
+
+    if message.content == "!uma":
+        await message.channel.send("🐴 UMA BOT ONLINE!")
 
 # ======================
 # RUN
 # ======================
 if not TOKEN:
-    print("TOKEN ontbreekt!")
+    print("TOKEN ontbreekt! Zet hem in Render ENV variables.")
 else:
     client.run(TOKEN)
