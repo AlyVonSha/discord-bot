@@ -1,2 +1,2 @@
-# discord-bot
+# bot
 discord
