@@ -4,15 +4,25 @@ import feedparser
 import asyncio
 import os
 
+# ======================
+# CONFIG (Render ENV)
+# ======================
 TOKEN = os.environ.get("TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+
 RSS_URL = "https://nitter.net/uma_musu/rss"
 
+# ======================
+# DISCORD SETUP
+# ======================
 intents = discord.Intents.default()
 intents.message_content = True
 
 client = discord.Client(intents=intents)
 
+# ======================
+# WEBHOOK EMBED
+# ======================
 def send_webhook_embed(title, description, url=None):
     if not WEBHOOK_URL:
         print("WEBHOOK_URL ontbreekt!")
@@ -25,13 +35,21 @@ def send_webhook_embed(title, description, url=None):
                 "description": description,
                 "url": url,
                 "color": 0xFF66AA,
-                "footer": {"text": "🐴 Umamusume JP Bot"}
+                "footer": {
+                    "text": "🐴 Umamusume JP Bot"
+                }
             }
         ]
     }
 
-    requests.post(WEBHOOK_URL, json=data)
+    try:
+        requests.post(WEBHOOK_URL, json=data, timeout=10)
+    except Exception as e:
+        print("Webhook error:", e)
 
+# ======================
+# RSS TRACKER (SAFE)
+# ======================
 last_entry = None
 
 async def check_rss():
@@ -43,7 +61,7 @@ async def check_rss():
         try:
             feed = feedparser.parse(RSS_URL)
 
-            if feed.entries:
+            if feed and feed.entries:
                 latest = feed.entries[0]
 
                 if latest.link != last_entry:
@@ -58,10 +76,13 @@ async def check_rss():
                     print("Nieuwe update gestuurd!")
 
         except Exception as e:
-            print("RSS error:", e)
+            print("RSS error (ignored):", e)
 
         await asyncio.sleep(60)
 
+# ======================
+# EVENTS
+# ======================
 @client.event
 async def on_ready():
     print(f"Bot online als {client.user}")
@@ -81,7 +102,10 @@ async def on_message(message):
         send_webhook_embed("📢 Log", text)
         await message.channel.send("Geloggd!")
 
+# ======================
+# RUN BOT
+# ======================
 if not TOKEN:
-    print("TOKEN ontbreekt!")
+    print("TOKEN ontbreekt in Render ENV variables!")
 else:
     client.run(TOKEN)
