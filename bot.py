@@ -96,7 +96,7 @@ def find_profile_by_trainer_id(trainer_id):
 # ======================
 def send_webhook_embed(title, description, url=None):
     if not WEBHOOK_URL:
-        print("WEBHOOK_URL ontbreekt!")
+        print("WEBHOOK_URL is missing!")
         return
 
     data = {
@@ -171,12 +171,12 @@ async def check_rss():
                     description = f"🇯🇵 {latest.title}\n🇬🇧 {translated}"
 
                     send_webhook_embed(
-                        "🐴 Umamusume Update",
+                        "🐴 Umamusume Nitter Update",
                         description,
                         latest.link
                     )
 
-                    print("Nieuwe Nitter update gestuurd!")
+                    print("New Nitter update sent!")
 
         except Exception as e:
             print("RSS error:", e)
@@ -187,7 +187,6 @@ async def check_rss():
 # CARD IMAGE HELPERS
 # ======================
 def load_font(size):
-    # Probeer een paar veelvoorkomende fonts; val terug op default
     candidates = [
         "DejaVuSans-Bold.ttf",
         "DejaVuSans.ttf",
@@ -200,21 +199,41 @@ def load_font(size):
             continue
     return ImageFont.load_default()
 
-def draw_pill(draw, x, y, text, fill, outline=None, text_color=(255, 255, 255), font=None, padding_x=10, padding_y=6):
-    if font is None:
-        font = load_font(18)
+def fit_text(draw, text, font, max_width):
+    if not text:
+        return ""
+    while text:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        width = bbox[2] - bbox[0]
+        if width <= max_width:
+            return text
+        text = text[:-1]
+    return ""
 
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
+def wrap_text(draw, text, font, max_width, max_lines=2):
+    words = text.split()
+    lines = []
+    current = ""
 
-    w = text_w + padding_x * 2
-    h = text_h + padding_y * 2
+    for word in words:
+        test = f"{current} {word}".strip()
+        bbox = draw.textbbox((0, 0), test, font=font)
+        width = bbox[2] - bbox[0]
 
-    draw.rounded_rectangle((x, y, x + w, y + h), radius=14, fill=fill, outline=outline if outline else fill, width=2)
-    draw.text((x + padding_x, y + padding_y - 1), text, font=font, fill=text_color)
+        if width <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
 
-    return w, h
+        if len(lines) >= max_lines:
+            break
+
+    if current and len(lines) < max_lines:
+        lines.append(current)
+
+    return lines[:max_lines]
 
 def create_trainer_card(profile):
     width, height = 1200, 700
@@ -228,116 +247,97 @@ def create_trainer_card(profile):
     cyan = (90, 190, 255)
     pink = (255, 70, 140)
     green = (90, 210, 110)
-    graypill = (70, 73, 82)
 
     img = Image.new("RGB", (width, height), bg)
     draw = ImageDraw.Draw(img)
 
-    font_title = load_font(36)
-    font_big = load_font(28)
+    font_title = load_font(34)
+    font_big = load_font(26)
     font = load_font(22)
     font_small = load_font(18)
+    font_tiny = load_font(16)
 
-    # main panel
     draw.rounded_rectangle((20, 20, width - 20, height - 20), radius=18, fill=panel, outline=border, width=2)
 
     # top stats
-    draw.text((40, 40), profile.get("affinity", "0"), font=font_big, fill=pink)
-    draw.text((40, 78), "AFFINITY", font=font_small, fill=white)
+    stats_x = [40, 135, 240]
+    stats_values = [
+        (profile.get("affinity", ""), "AFFINITY", pink),
+        (profile.get("g1_wins", ""), "G1 WINS", green),
+        (profile.get("white_skills", ""), "WHITE SKILLS", gold),
+    ]
 
-    draw.text((120, 40), profile.get("g1_wins", "0"), font=font_big, fill=green)
-    draw.text((120, 78), "G1 WINS", font=font_small, fill=white)
+    for x, (value, label, color) in zip(stats_x, stats_values):
+        value = value if value else "?"
+        draw.text((x, 42), str(value), font=font_big, fill=color)
+        draw.text((x, 80), label, font=font_small, fill=white)
 
-    draw.text((205, 40), profile.get("white_skills", "0"), font=font_big, fill=gold)
-    draw.text((205, 78), "WHITE SKILLS", font=font_small, fill=white)
+    draw.line((350, 36, 350, 96), fill=border, width=2)
 
-    # separator
-    draw.line((290, 35, 290, 95), fill=border, width=2)
+    rank = profile.get("rank", "") or "?"
+    score = profile.get("score", "") or "?"
+    draw.rounded_rectangle((380, 32, 430, 82), radius=24, outline=gold, width=3, fill=(35, 35, 35))
+    draw.text((395, 43), rank, font=font, fill=gold)
 
-    # rank + score
-    rank = profile.get("rank", "?") or "?"
-    score = profile.get("score", "?") or "?"
-    draw.rounded_rectangle((320, 30, 370, 80), radius=24, outline=gold, width=3, fill=(35, 35, 35))
-    draw.text((335, 42), rank, font=font, fill=gold)
+    draw.text((450, 42), str(score), font=font_big, fill=cyan)
+    draw.text((450, 80), "SCORE", font=font_small, fill=white)
 
-    draw.text((390, 38), str(score), font=font_big, fill=cyan)
-    draw.text((390, 78), "SCORE", font=font_small, fill=white)
-
-    # name + trainer id
-    name = profile.get("name", "") or "Unknown Trainer"
+    # trainer name and id
+    trainer_name = profile.get("name", "") or "Unknown Trainer"
     trainer_id = profile.get("trainer_id", "") or "Not set"
-    draw.text((850, 52), f"TRAINER:", font=font_small, fill=muted)
-    draw.text((965, 45), name, font=font_big, fill=white)
 
-    # trainer id box
-    draw.rounded_rectangle((975, 32, 1160, 76), radius=10, outline=border, width=2, fill=(34, 36, 42))
-    draw.text((995, 44), trainer_id, font=font, fill=white)
+    draw.text((840, 46), "TRAINER:", font=font_small, fill=muted)
 
-    # divider
+    safe_name = fit_text(draw, trainer_name, font_big, 170)
+    draw.text((945, 42), safe_name, font=font_big, fill=white)
+
+    draw.rounded_rectangle((990, 32, 1160, 76), radius=10, outline=border, width=2, fill=(34, 36, 42))
+    safe_id = fit_text(draw, trainer_id, font, 145)
+    draw.text((1006, 44), safe_id, font=font, fill=white)
+
     draw.line((40, 120, 1160, 120), fill=border, width=2)
 
-    # left portrait placeholder
+    # left panel placeholders
     draw.ellipse((55, 145, 145, 235), fill=(45, 45, 50), outline=border, width=3)
     draw.text((78, 178), "UMA", font=font_big, fill=white)
 
-    # lower mini circles
     draw.ellipse((55, 250, 105, 300), fill=(45, 45, 50), outline=border, width=2)
     draw.ellipse((115, 250, 165, 300), fill=(45, 45, 50), outline=border, width=2)
 
-    # support placeholder
     draw.rounded_rectangle((55, 330, 105, 390), radius=10, fill=(75, 85, 150), outline=(120, 180, 255), width=2)
     draw.text((64, 350), "SSR", font=font_small, fill=white)
 
-    # diamonds placeholder
     dx = 125
     for _ in range(4):
         draw.polygon([(dx, 360), (dx + 8, 352), (dx + 16, 360), (dx + 8, 368)], fill=cyan)
         dx += 22
 
-    # content area separators
-    draw.line((210, 150, 210, 630), fill=(80, 180, 255), width=4)
     draw.line((210, 150, 210, 630), fill=(80, 180, 255), width=4)
 
     # top pills
     x = 235
-    y = 150
+    y = 148
+    pill_w = 22
+    pill_h = 12
+    gap = 16
+    for _ in range(2):
+        draw.rounded_rectangle((x, y, x + pill_w, y + pill_h), radius=6, fill=(80, 160, 255))
+        x += pill_w + gap
 
-    pill_items = [
-        (f"{profile.get('star_uma', 'Star Uma')}", (40, 110, 180)),
-        (f"{profile.get('career_support', 'Career Support')}", (45, 115, 210)),
-    ]
-
-    for text, color in pill_items:
-        w, _ = draw_pill(draw, x, y, text, fill=color, outline=(120, 190, 255), font=font_small)
-        x += w + 12
-
-    y += 50
+    # comment
+    y = 200
+    draw.text((235, y), "COMMENT", font=font_small, fill=lime)
+    y += 34
 
     comment = profile.get("comment", "") or "No comment set"
-    # comment wraps a bit
-    comment_lines = []
-    words = comment.split()
-    line = ""
-    for word in words:
-        test = f"{line} {word}".strip()
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if bbox[2] > 850:
-            if line:
-                comment_lines.append(line)
-            line = word
-        else:
-            line = test
-    if line:
-        comment_lines.append(line)
+    comment_lines = wrap_text(draw, comment, font_big, 850, max_lines=2)
+    for line in comment_lines:
+        draw.text((235, y), line, font=font_big, fill=white)
+        y += 34
 
-    draw.text((235, y), "COMMENT", font=font_small, fill=lime)
-    y += 30
-    for line in comment_lines[:2]:
-        draw.text((235, y), line, font=font, fill=white)
-        y += 32
+    y += 18
 
-    # profile info section
-    y += 15
+    # info rows
     profile_lines = [
         ("Club", profile.get("club", "") or "Not set"),
         ("Archive Lvl", profile.get("archive_level", "") or "Not set"),
@@ -345,13 +345,24 @@ def create_trainer_card(profile):
         ("Career Support", profile.get("career_support", "") or "Not set"),
     ]
 
+    label_x1 = 235
+    label_x2 = 435
+    value_x = 455
+    row_width = 190
+    row_height = 34
+
     for label, value in profile_lines:
-        draw.rounded_rectangle((235, y, 420, y + 34), radius=12, fill=(55, 57, 63))
-        draw.text((255, y + 6), label, font=font_small, fill=white)
-        draw.text((440, y + 4), value, font=font, fill=white)
+        draw.rounded_rectangle(
+            (label_x1, y, label_x2, y + row_height),
+            radius=12,
+            fill=(55, 57, 63)
+        )
+        draw.text((label_x1 + 18, y + 6), label, font=font_small, fill=white)
+
+        safe_value = fit_text(draw, str(value), font, 470)
+        draw.text((value_x, y + 4), safe_value, font=font, fill=white)
         y += 52
 
-    # footer hint
     draw.text((235, 645), f"Discord user: {profile.get('discord_name', 'Unknown')}", font=font_small, fill=muted)
 
     buffer = io.BytesIO()
@@ -402,7 +413,7 @@ def set_profile_field(user_id, discord_name, field_name, value):
 # ======================
 @client.event
 async def on_ready():
-    print(f"Bot online als {client.user}")
+    print(f"Bot online as {client.user}")
     client.loop.create_task(check_rss())
 
 @client.event
@@ -421,14 +432,11 @@ async def on_message(message):
     if content == "!test":
         send_webhook_embed(
             "Bot Test",
-            "👋 Nitter + vertaling + trainer card werkt!"
+            "👋 Nitter + translation + trainer card is working!"
         )
-        await message.channel.send("OK webhook gestuurd!")
+        await message.channel.send("Webhook test sent successfully!")
         return
 
-    # ----------------------
-    # REGISTER
-    # ----------------------
     if content.startswith("!register"):
         parts = content.split()
 
@@ -439,21 +447,18 @@ async def on_message(message):
             trainer_id = parts[2]
 
         if not trainer_id:
-            await message.channel.send("Gebruik: `!register 304265005615` of `!register tid 304265005615`")
+            await message.channel.send("Usage: `!register 304265005615` or `!register tid 304265005615`")
             return
 
         cleaned = trainer_id.replace(" ", "")
         if not cleaned.isdigit():
-            await message.channel.send("❌ Trainer ID moet alleen cijfers bevatten.")
+            await message.channel.send("❌ Trainer ID must contain digits only.")
             return
 
         set_profile_field(user_id, discord_name, "trainer_id", cleaned)
-        await message.channel.send(f"✅ Trainer ID opgeslagen: `{cleaned}`")
+        await message.channel.send(f"✅ Trainer ID saved: `{cleaned}`")
         return
 
-    # ----------------------
-    # SIMPLE SET COMMANDS
-    # ----------------------
     setters = {
         "!setname": "name",
         "!setrank": "rank",
@@ -472,33 +477,24 @@ async def on_message(message):
         if content.startswith(command):
             value = content[len(command):].strip()
             if not value:
-                await message.channel.send(f"Gebruik: `{command} waarde`")
+                await message.channel.send(f"Usage: `{command} value`")
                 return
 
             set_profile_field(user_id, discord_name, field, value)
-            await message.channel.send(f"✅ `{field}` opgeslagen: **{value}**")
+            await message.channel.send(f"✅ `{field}` saved as: **{value}**")
             return
 
-    # ----------------------
-    # PROFILE
-    # ----------------------
     if content == "!profile":
         users = load_users()
         key = str(user_id)
 
         if key not in users:
-            await message.channel.send("❌ Je hebt nog geen profiel. Gebruik eerst `!register 304265005615` en daarna `!setname ...` enz.")
+            await message.channel.send("❌ No profile found. Use `!register 304265005615` first, then fill in your fields with `!set...` commands.")
             return
 
         await send_profile_card(message.channel, users[key])
         return
 
-    # ----------------------
-    # TID
-    # !tid -> eigen profiel
-    # !tid 304265005615 -> profiel zoeken op trainer id
-    # !trainerid -> alias
-    # ----------------------
     if content.startswith("!tid") or content.startswith("!trainerid"):
         parts = content.split()
 
@@ -507,7 +503,7 @@ async def on_message(message):
             key = str(user_id)
 
             if key not in users:
-                await message.channel.send("❌ Je hebt nog geen trainer ID geregistreerd.")
+                await message.channel.send("❌ You have not registered a trainer ID yet.")
                 return
 
             await send_profile_card(message.channel, users[key])
@@ -515,7 +511,7 @@ async def on_message(message):
 
         trainer_id = parts[1].replace(" ", "")
         if not trainer_id.isdigit():
-            await message.channel.send("❌ Trainer ID moet alleen cijfers bevatten.")
+            await message.channel.send("❌ Trainer ID must contain digits only.")
             return
 
         profile = find_profile_by_trainer_id(trainer_id)
@@ -523,8 +519,7 @@ async def on_message(message):
             await send_profile_card(message.channel, profile)
         else:
             await message.channel.send(
-                f"❌ Geen opgeslagen profiel gevonden voor `{trainer_id}`.\n"
-                f"Registreer eerst met `!register {trainer_id}`."
+                f"❌ No saved profile found for `{trainer_id}`.\nRegister it first with `!register {trainer_id}`."
             )
         return
 
@@ -532,6 +527,6 @@ async def on_message(message):
 # RUN
 # ======================
 if not TOKEN:
-    print("TOKEN ontbreekt! Zet hem in Render ENV variables.")
+    print("TOKEN is missing! Set it in your Render environment variables.")
 else:
     client.run(TOKEN)
