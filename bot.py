@@ -6,16 +6,14 @@ import os
 from threading import Thread
 from flask import Flask
 from deep_translator import GoogleTranslator
-from bs4 import BeautifulSoup
 
 # ======================
 # CONFIG
 # ======================
 TOKEN = os.environ.get("TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-
 RSS_URL = "https://nitter.net/uma_musu/rss"
-NEWS_URL = "https://umamusume.jp/news/"
+FILE_NAME = "seen.txt"
 
 # ======================
 # FLASK (Render Web Service fix)
@@ -76,10 +74,20 @@ def translate_text(text):
         return text
 
 # ======================
-# NITTER RSS
+# LOAD SEEN LINKS
 # ======================
 seen_rss = set()
 
+if os.path.exists(FILE_NAME):
+    with open(FILE_NAME, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                seen_rss.add(line)
+
+# ======================
+# NITTER RSS
+# ======================
 async def check_rss():
     global seen_rss
 
@@ -94,6 +102,9 @@ async def check_rss():
 
                 if latest.link not in seen_rss:
                     seen_rss.add(latest.link)
+
+                    with open(FILE_NAME, "a", encoding="utf-8") as f:
+                        f.write(latest.link + "\n")
 
                     translated = translate_text(latest.title)
                     description = f"🇯🇵 {latest.title}\n🇬🇧 {translated}"
@@ -112,76 +123,12 @@ async def check_rss():
         await asyncio.sleep(60)
 
 # ======================
-# OFFICIAL WEBSITE NEWS
-# ======================
-seen_news = set()
-
-def get_latest_news():
-    try:
-        response = requests.get(NEWS_URL, timeout=15)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        article = soup.select_one("a.news__list__item")
-        if article is None:
-            article = soup.select_one("li a")
-        if article is None:
-            return None, None
-
-        title = article.get_text(" ", strip=True)
-        link = article.get("href")
-
-        if not link:
-            return None, None
-
-        if link.startswith("/"):
-            link = "https://umamusume.jp" + link
-        elif not link.startswith("http"):
-            link = "https://umamusume.jp/news/" + link.lstrip("/")
-
-        return title, link
-
-    except Exception as e:
-        print("News scrape error:", e)
-        return None, None
-
-async def check_news():
-    global seen_news
-
-    await client.wait_until_ready()
-
-    while not client.is_closed():
-        try:
-            title, link = get_latest_news()
-
-            if title and link and link not in seen_news:
-                seen_news.add(link)
-
-                translated = translate_text(title)
-                description = f"🇯🇵 {title}\n🇬🇧 {translated}"
-
-                send_webhook_embed(
-                    "🐴 Umamusume Official News",
-                    description,
-                    link
-                )
-
-                print("Nieuwe website update gestuurd!")
-
-        except Exception as e:
-            print("News loop error:", e)
-
-        await asyncio.sleep(300)
-
-# ======================
 # EVENTS
 # ======================
 @client.event
 async def on_ready():
     print(f"Bot online als {client.user}")
     client.loop.create_task(check_rss())
-    client.loop.create_task(check_news())
 
 @client.event
 async def on_message(message):
@@ -191,7 +138,7 @@ async def on_message(message):
     if message.content == "!test":
         send_webhook_embed(
             "Bot Test",
-            "👋 Nitter + website scraper + vertaling werkt!"
+            "👋 Nitter + vertaling werkt!"
         )
         await message.channel.send("OK webhook gestuurd!")
 
