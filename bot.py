@@ -5,6 +5,7 @@ import asyncio
 import os
 from threading import Thread
 from flask import Flask
+from googletrans import Translator
 
 # ======================
 # CONFIG
@@ -14,7 +15,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 RSS_URL = "https://nitter.net/uma_musu/rss"
 
 # ======================
-# FLASK (Render FIX)
+# FLASK (Render 24/7 fix)
 # ======================
 app = Flask(__name__)
 
@@ -32,8 +33,12 @@ Thread(target=run_web).start()
 # ======================
 intents = discord.Intents.default()
 intents.message_content = True
-
 client = discord.Client(intents=intents)
+
+# ======================
+# TRANSLATOR
+# ======================
+translator = Translator()
 
 # ======================
 # WEBHOOK
@@ -63,16 +68,12 @@ def send_webhook_embed(title, description, url=None):
         print("Webhook error:", e)
 
 # ======================
-# RSS MEMORY FIX (NO DUPLICATES)
+# RSS TRACKER (NO DUPLICATES IN RUNTIME)
 # ======================
-if os.path.exists("last_entry.txt"):
-    with open("last_entry.txt", "r") as f:
-        last_entry = f.read().strip()
-else:
-    last_entry = None
+seen = set()
 
 async def check_rss():
-    global last_entry
+    global seen
 
     await client.wait_until_ready()
 
@@ -83,18 +84,22 @@ async def check_rss():
             if feed.entries:
                 latest = feed.entries[0]
 
-                if latest.link != last_entry:
-                    last_entry = latest.link
+                if latest.link not in seen:
+                    seen.add(latest.link)
+
+                    # 🔥 TRANSLATE
+                    try:
+                        translated = translator.translate(latest.title, dest="en").text
+                    except:
+                        translated = latest.title
+
+                    description = f"🇯🇵 {latest.title}\n🇬🇧 {translated}"
 
                     send_webhook_embed(
                         "🐴 Umamusume Update",
-                        latest.title,
+                        description,
                         latest.link
                     )
-
-                    # SAVE LAST ENTRY (IMPORTANT FIX)
-                    with open("last_entry.txt", "w") as f:
-                        f.write(last_entry)
 
                     print("Nieuwe update gestuurd!")
 
@@ -119,9 +124,6 @@ async def on_message(message):
     if message.content == "!test":
         send_webhook_embed("Bot Test", "👋 Bot werkt via embed!")
         await message.channel.send("OK webhook gestuurd!")
-
-    if message.content == "!uma":
-        await message.channel.send("🐴 UMA BOT ONLINE!")
 
 # ======================
 # RUN
