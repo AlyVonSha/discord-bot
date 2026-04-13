@@ -5,7 +5,7 @@ import asyncio
 import os
 from threading import Thread
 from flask import Flask
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 # ======================
 # CONFIG
@@ -36,11 +36,6 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 # ======================
-# TRANSLATOR
-# ======================
-translator = Translator()
-
-# ======================
 # WEBHOOK
 # ======================
 def send_webhook_embed(title, description, url=None):
@@ -68,7 +63,7 @@ def send_webhook_embed(title, description, url=None):
         print("Webhook error:", e)
 
 # ======================
-# RSS TRACKER (NO DUPLICATES IN RUNTIME)
+# RSS TRACKER (NO DUPLICATES DURING RUNTIME)
 # ======================
 seen = set()
 
@@ -87,10 +82,14 @@ async def check_rss():
                 if latest.link not in seen:
                     seen.add(latest.link)
 
-                    # 🔥 TRANSLATE
+                    # 🔥 TRANSLATE (WORKING VERSION)
                     try:
-                        translated = translator.translate(latest.title, dest="en").text
-                    except:
+                        translated = GoogleTranslator(
+                            source="auto",
+                            target="en"
+                        ).translate(latest.title)
+                    except Exception as e:
+                        print("Translate error:", e)
                         translated = latest.title
 
                     description = f"🇯🇵 {latest.title}\n🇬🇧 {translated}"
