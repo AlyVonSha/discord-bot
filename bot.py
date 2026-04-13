@@ -171,7 +171,7 @@ async def check_rss():
                     description = f"🇯🇵 {latest.title}\n🇬🇧 {translated}"
 
                     send_webhook_embed(
-                        "🐴 Umamusume Nitter Update",
+                        "🐴 Umamusume Update",
                         description,
                         latest.link
                     )
