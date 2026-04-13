@@ -6,16 +6,19 @@ import os
 from threading import Thread
 from flask import Flask
 from deep_translator import GoogleTranslator
+from bs4 import BeautifulSoup
 
 # ======================
 # CONFIG
 # ======================
 TOKEN = os.environ.get("TOKEN")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+
 RSS_URL = "https://nitter.net/uma_musu/rss"
+NEWS_URL = "https://umamusume.jp/news/"
 
 # ======================
-# FLASK (Render 24/7 fix)
+# FLASK (Render Web Service fix)
 # ======================
 app = Flask(__name__)
 
@@ -63,12 +66,22 @@ def send_webhook_embed(title, description, url=None):
         print("Webhook error:", e)
 
 # ======================
-# RSS TRACKER (NO DUPLICATES DURING RUNTIME)
+# TRANSLATE
 # ======================
-seen = set()
+def translate_text(text):
+    try:
+        return GoogleTranslator(source="auto", target="en").translate(text)
+    except Exception as e:
+        print("Translate error:", e)
+        return text
+
+# ======================
+# NITTER RSS
+# ======================
+seen_rss = set()
 
 async def check_rss():
-    global seen
+    global seen_rss
 
     await client.wait_until_ready()
 
@@ -79,33 +92,87 @@ async def check_rss():
             if feed.entries:
                 latest = feed.entries[0]
 
-                if latest.link not in seen:
-                    seen.add(latest.link)
+                if latest.link not in seen_rss:
+                    seen_rss.add(latest.link)
 
-                    # 🔥 TRANSLATE (WORKING VERSION)
-                    try:
-                        translated = GoogleTranslator(
-                            source="auto",
-                            target="en"
-                        ).translate(latest.title)
-                    except Exception as e:
-                        print("Translate error:", e)
-                        translated = latest.title
-
+                    translated = translate_text(latest.title)
                     description = f"🇯🇵 {latest.title}\n🇬🇧 {translated}"
 
                     send_webhook_embed(
-                        "🐴 Umamusume Update",
+                        "🐴 Umamusume Nitter Update",
                         description,
                         latest.link
                     )
 
-                    print("Nieuwe update gestuurd!")
+                    print("Nieuwe Nitter update gestuurd!")
 
         except Exception as e:
             print("RSS error:", e)
 
         await asyncio.sleep(60)
+
+# ======================
+# OFFICIAL WEBSITE NEWS
+# ======================
+seen_news = set()
+
+def get_latest_news():
+    try:
+        response = requests.get(NEWS_URL, timeout=15)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        article = soup.select_one("a.news__list__item")
+        if article is None:
+            article = soup.select_one("li a")
+        if article is None:
+            return None, None
+
+        title = article.get_text(" ", strip=True)
+        link = article.get("href")
+
+        if not link:
+            return None, None
+
+        if link.startswith("/"):
+            link = "https://umamusume.jp" + link
+        elif not link.startswith("http"):
+            link = "https://umamusume.jp/news/" + link.lstrip("/")
+
+        return title, link
+
+    except Exception as e:
+        print("News scrape error:", e)
+        return None, None
+
+async def check_news():
+    global seen_news
+
+    await client.wait_until_ready()
+
+    while not client.is_closed():
+        try:
+            title, link = get_latest_news()
+
+            if title and link and link not in seen_news:
+                seen_news.add(link)
+
+                translated = translate_text(title)
+                description = f"🇯🇵 {title}\n🇬🇧 {translated}"
+
+                send_webhook_embed(
+                    "🐴 Umamusume Official News",
+                    description,
+                    link
+                )
+
+                print("Nieuwe website update gestuurd!")
+
+        except Exception as e:
+            print("News loop error:", e)
+
+        await asyncio.sleep(300)
 
 # ======================
 # EVENTS
@@ -114,6 +181,7 @@ async def check_rss():
 async def on_ready():
     print(f"Bot online als {client.user}")
     client.loop.create_task(check_rss())
+    client.loop.create_task(check_news())
 
 @client.event
 async def on_message(message):
@@ -121,7 +189,10 @@ async def on_message(message):
         return
 
     if message.content == "!test":
-        send_webhook_embed("Bot Test", "👋 Bot werkt via embed!")
+        send_webhook_embed(
+            "Bot Test",
+            "👋 Nitter + website scraper + vertaling werkt!"
+        )
         await message.channel.send("OK webhook gestuurd!")
 
 # ======================
