@@ -199,42 +199,6 @@ def load_font(size):
             continue
     return ImageFont.load_default()
 
-def fit_text(draw, text, font, max_width):
-    if not text:
-        return ""
-    while text:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        width = bbox[2] - bbox[0]
-        if width <= max_width:
-            return text
-        text = text[:-1]
-    return ""
-
-def wrap_text(draw, text, font, max_width, max_lines=2):
-    words = text.split()
-    lines = []
-    current = ""
-
-    for word in words:
-        test = f"{current} {word}".strip()
-        bbox = draw.textbbox((0, 0), test, font=font)
-        width = bbox[2] - bbox[0]
-
-        if width <= max_width:
-            current = test
-        else:
-            if current:
-                lines.append(current)
-            current = word
-
-        if len(lines) >= max_lines:
-            break
-
-    if current and len(lines) < max_lines:
-        lines.append(current)
-
-    return lines[:max_lines]
-
 def create_trainer_card(profile):
     width, height = 1200, 700
     bg = (20, 22, 26)
@@ -255,49 +219,94 @@ def create_trainer_card(profile):
     font_big = load_font(26)
     font = load_font(22)
     font_small = load_font(18)
-    font_tiny = load_font(16)
 
+    def text_width(text, font_obj):
+        bbox = draw.textbbox((0, 0), str(text), font=font_obj)
+        return bbox[2] - bbox[0]
+
+    def fit_text(text, font_obj, max_width):
+        text = str(text)
+        if text_width(text, font_obj) <= max_width:
+            return text
+        while len(text) > 1 and text_width(text + "...", font_obj) > max_width:
+            text = text[:-1]
+        return text + "..."
+
+    def wrap_text(text, font_obj, max_width, max_lines=2):
+        words = str(text).split()
+        if not words:
+            return [""]
+        lines = []
+        current = ""
+        for word in words:
+            test = f"{current} {word}".strip()
+            if text_width(test, font_obj) <= max_width:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+                if len(lines) >= max_lines - 1:
+                    break
+        if current and len(lines) < max_lines:
+            lines.append(current)
+
+        if len(lines) == max_lines and words:
+            lines[-1] = fit_text(lines[-1], font_obj, max_width)
+
+        return lines
+
+    # outer panel
     draw.rounded_rectangle((20, 20, width - 20, height - 20), radius=18, fill=panel, outline=border, width=2)
 
-    # top stats
-    stats_x = [40, 135, 240]
-    stats_values = [
-        (profile.get("affinity", ""), "AFFINITY", pink),
-        (profile.get("g1_wins", ""), "G1 WINS", green),
-        (profile.get("white_skills", ""), "WHITE SKILLS", gold),
+    # ======================
+    # TOP BAR
+    # ======================
+    top_y = 38
+    stat_w = 95
+
+    top_stats = [
+        ("AFFINITY", profile.get("affinity", "") or "?", pink),
+        ("G1 WINS", profile.get("g1_wins", "") or "?", green),
+        ("WHITE SKILLS", profile.get("white_skills", "") or "?", gold),
     ]
 
-    for x, (value, label, color) in zip(stats_x, stats_values):
-        value = value if value else "?"
-        draw.text((x, 42), str(value), font=font_big, fill=color)
-        draw.text((x, 80), label, font=font_small, fill=white)
+    x = 40
+    for label, value, color in top_stats:
+        draw.text((x, top_y), str(value), font=font_big, fill=color)
+        draw.text((x, top_y + 38), label, font=font_small, fill=white)
+        x += stat_w
 
-    draw.line((350, 36, 350, 96), fill=border, width=2)
+    draw.line((335, 34, 335, 100), fill=border, width=2)
 
     rank = profile.get("rank", "") or "?"
     score = profile.get("score", "") or "?"
-    draw.rounded_rectangle((380, 32, 430, 82), radius=24, outline=gold, width=3, fill=(35, 35, 35))
-    draw.text((395, 43), rank, font=font, fill=gold)
+    draw.rounded_rectangle((360, 32, 410, 82), radius=24, outline=gold, width=3, fill=(35, 35, 35))
+    draw.text((376, 43), fit_text(rank, font, 30), font=font, fill=gold)
 
-    draw.text((450, 42), str(score), font=font_big, fill=cyan)
-    draw.text((450, 80), "SCORE", font=font_small, fill=white)
+    draw.text((430, 40), fit_text(score, font_big, 120), font=font_big, fill=cyan)
+    draw.text((430, 78), "SCORE", font=font_small, fill=white)
 
-    # trainer name and id
+    # Trainer section
+    trainer_label_x = 840
+    trainer_name_x = 945
+    trainer_box_x1 = 980
+    trainer_box_x2 = 1160
+
     trainer_name = profile.get("name", "") or "Unknown Trainer"
     trainer_id = profile.get("trainer_id", "") or "Not set"
 
-    draw.text((840, 46), "TRAINER:", font=font_small, fill=muted)
+    draw.text((trainer_label_x, 46), "TRAINER:", font=font_small, fill=muted)
+    draw.text((trainer_name_x, 42), fit_text(trainer_name, font_big, 160), font=font_big, fill=white)
 
-    safe_name = fit_text(draw, trainer_name, font_big, 170)
-    draw.text((945, 42), safe_name, font=font_big, fill=white)
-
-    draw.rounded_rectangle((990, 32, 1160, 76), radius=10, outline=border, width=2, fill=(34, 36, 42))
-    safe_id = fit_text(draw, trainer_id, font, 145)
-    draw.text((1006, 44), safe_id, font=font, fill=white)
+    draw.rounded_rectangle((trainer_box_x1, 32, trainer_box_x2, 76), radius=10, outline=border, width=2, fill=(34, 36, 42))
+    draw.text((trainer_box_x1 + 14, 44), fit_text(trainer_id, font, 150), font=font, fill=white)
 
     draw.line((40, 120, 1160, 120), fill=border, width=2)
 
-    # left panel placeholders
+    # ======================
+    # LEFT COLUMN
+    # ======================
     draw.ellipse((55, 145, 145, 235), fill=(45, 45, 50), outline=border, width=3)
     draw.text((78, 178), "UMA", font=font_big, fill=white)
 
@@ -312,58 +321,56 @@ def create_trainer_card(profile):
         draw.polygon([(dx, 360), (dx + 8, 352), (dx + 16, 360), (dx + 8, 368)], fill=cyan)
         dx += 22
 
-    draw.line((210, 150, 210, 630), fill=(80, 180, 255), width=4)
+    draw.line((205, 145, 205, 640), fill=(80, 180, 255), width=4)
 
-    # top pills
-    x = 235
-    y = 148
-    pill_w = 22
-    pill_h = 12
-    gap = 16
-    for _ in range(2):
-        draw.rounded_rectangle((x, y, x + pill_w, y + pill_h), radius=6, fill=(80, 160, 255))
-        x += pill_w + gap
+    # ======================
+    # RIGHT CONTENT AREA
+    # ======================
+    content_x = 235
+
+    # small top pills
+    pill_y = 150
+    draw.rounded_rectangle((content_x, pill_y, content_x + 20, pill_y + 12), radius=6, fill=(80, 160, 255))
+    draw.rounded_rectangle((content_x + 32, pill_y, content_x + 52, pill_y + 12), radius=6, fill=(80, 160, 255))
 
     # comment
-    y = 200
-    draw.text((235, y), "COMMENT", font=font_small, fill=lime)
+    y = 195
+    draw.text((content_x, y), "COMMENT", font=font_small, fill=lime)
     y += 34
 
     comment = profile.get("comment", "") or "No comment set"
-    comment_lines = wrap_text(draw, comment, font_big, 850, max_lines=2)
-    for line in comment_lines:
-        draw.text((235, y), line, font=font_big, fill=white)
+    for line in wrap_text(comment, font_big, 820, max_lines=2):
+        draw.text((content_x, y), line, font=font_big, fill=white)
         y += 34
 
-    y += 18
+    y += 20
 
-    # info rows
-    profile_lines = [
+    # profile rows
+    rows = [
         ("Club", profile.get("club", "") or "Not set"),
         ("Archive Lvl", profile.get("archive_level", "") or "Not set"),
         ("Star Umamusume", profile.get("star_uma", "") or "Not set"),
         ("Career Support", profile.get("career_support", "") or "Not set"),
     ]
 
-    label_x1 = 235
-    label_x2 = 435
-    value_x = 455
-    row_width = 190
-    row_height = 34
+    label_box_x1 = content_x
+    label_box_x2 = content_x + 200
+    value_x = content_x + 220
+    value_max_width = 600
+    row_h = 34
+    row_gap = 18
 
-    for label, value in profile_lines:
-        draw.rounded_rectangle(
-            (label_x1, y, label_x2, y + row_height),
-            radius=12,
-            fill=(55, 57, 63)
-        )
-        draw.text((label_x1 + 18, y + 6), label, font=font_small, fill=white)
+    for label, value in rows:
+        draw.rounded_rectangle((label_box_x1, y, label_box_x2, y + row_h), radius=12, fill=(55, 57, 63))
+        draw.text((label_box_x1 + 18, y + 6), label, font=font_small, fill=white)
 
-        safe_value = fit_text(draw, str(value), font, 470)
+        safe_value = fit_text(value, font, value_max_width)
         draw.text((value_x, y + 4), safe_value, font=font, fill=white)
-        y += 52
 
-    draw.text((235, 645), f"Discord user: {profile.get('discord_name', 'Unknown')}", font=font_small, fill=muted)
+        y += row_h + row_gap
+
+    # footer
+    draw.text((content_x, 645), f"Discord user: {profile.get('discord_name', 'Unknown')}", font=font_small, fill=muted)
 
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
