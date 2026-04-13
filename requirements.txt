@@ -3,4 +3,3 @@ requests
 feedparser
 flask
 deep-translator
-Pillow
